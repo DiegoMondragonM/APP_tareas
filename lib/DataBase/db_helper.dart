@@ -116,9 +116,15 @@ class DbHelper {
     return await db.insert('semestres', semestre);
   }
 
-  static Future<Map<String, dynamic>?> getSemestreActivo() async {
+  static Future<Map<String, dynamic>?> getSemestreActivo(int usuarioId) async {
     final db = await DbHelper.getDatabase();
-    final result = await db.query('semestres');
+    final result = await db.query(
+      'semestres',
+      where: 'usuarioId = ?',
+      whereArgs: [usuarioId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
 
     if (result.isNotEmpty) {
       final semestre = result.first;
@@ -130,6 +136,46 @@ class DbHelper {
     } else {
       return null;
     }
+  }
+
+  // Borra TODO lo del semestre actual del usuario (materias, horarios, tareas y el registro del semestre).
+  // Útil para "cerrar semestre" e iniciar uno nuevo desde cero.
+  static Future<void> resetSemestre(int usuarioId) async {
+    final db = await getDatabase();
+    await db.transaction((txn) async {
+      // 1) Horarios de materias del usuario
+      final materias = await txn.query(
+        'materias',
+        columns: ['id'],
+        where: 'usuarioId = ?',
+        whereArgs: [usuarioId],
+      );
+      for (final m in materias) {
+        final materiaId = m['id'] as int;
+        await txn.delete(
+          'horarios_materia',
+          where: 'materiaId = ?',
+          whereArgs: [materiaId],
+        );
+      }
+
+      // 2) Materias del usuario
+      await txn.delete(
+        'materias',
+        where: 'usuarioId = ?',
+        whereArgs: [usuarioId],
+      );
+
+      // 3) Semestres del usuario
+      await txn.delete(
+        'semestres',
+        where: 'usuarioId = ?',
+        whereArgs: [usuarioId],
+      );
+
+      // 4) Tareas (tu tabla no tiene usuarioId, así que se borran todas)
+      await txn.delete('tareas');
+    });
   }
 
   static Future<int> insertMateria(Map<String, dynamic> materia) async {

@@ -82,7 +82,7 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
       return;
     }
 
-    final semestre = await DbHelper.getSemestreActivo();
+    final semestre = await DbHelper.getSemestreActivo(usuarioId);
     if (semestre != null) {
       setState(() {
         _haySemestreActivo = true;
@@ -210,6 +210,8 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
                   context,
                   MaterialPageRoute(builder: (_) => const HorarioScreen()),
                 );
+              } else if (value == 'reset_semestre') {
+                await _confirmarYReiniciarSemestre();
               }
             },
             itemBuilder:
@@ -221,6 +223,10 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
                   PopupMenuItem(
                     value: 'horario',
                     child: Text('Horario de clases'),
+                  ),
+                  PopupMenuItem(
+                    value: 'reset_semestre',
+                    child: Text('Cerrar semestre e iniciar uno nuevo'),
                   ),
                 ],
           ),
@@ -550,5 +556,71 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _confirmarYReiniciarSemestre() async {
+    final prefs = await SharedPreferences.getInstance();
+    final usuarioId = prefs.getInt('usuarioId');
+
+    if (usuarioId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se encontró usuarioId. Inicia sesión otra vez.'),
+        ),
+      );
+      return;
+    }
+
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('¿Iniciar nuevo semestre?'),
+            content: const Text(
+              'Esto borrará tus tareas, materias y horario del semestre actual.\n'
+              'También se cancelarán las notificaciones programadas.\n\n'
+              '¿Quieres continuar?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Sí, reiniciar'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmar != true) return;
+
+    try {
+      // 1) Cancelar notificaciones existentes de TODAS las tareas
+      final tareas = await DbHelper.getTareas();
+      for (final t in tareas) {
+        if (t.id != null) {
+          await Notificaciones.cancelarNotificacionesTarea(t.id!);
+        }
+      }
+
+      // 2) Reset del semestre (borra materias, horarios, semestres y tareas)
+      await DbHelper.resetSemestre(usuarioId);
+
+      if (!mounted) return;
+
+      // 3) Ir a crear semestre nuevo
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const NuevoSemestreScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error reiniciando semestre: $e')));
+    }
   }
 }

@@ -169,9 +169,14 @@ class _AgregarTareaScreenState extends State<AgregarTareaScreen> {
                           hintText: 'Puntos clave, links, indicaciones…',
                           prefixIcon: Icon(Icons.description_outlined),
                         ),
-                        maxLines: 3,
-                        maxLength: 200,
-                        onSaved: (v) => _descripcion = v?.trim() ?? '',
+                        maxLines: null,
+                        maxLength: 800,
+                                                validator: (v) {
+                          if (v == null) return null;
+                          if (v.length > 800) return 'Máximo 800 caracteres';
+                          return null;
+                        },
+onSaved: (v) => _descripcion = v?.trim() ?? '',
                       ),
                     ],
                   ),
