@@ -60,8 +60,9 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             } else {
-                println("⚠️  key.properties no encontrado: Release se firmará con debug si forzas `flutter run --release`.")
-                // signingConfig = signingConfigs.getByName("debug") // <- evita si vas a distribuir
+                // Sin keystore propio: firma debug para poder instalar/compartir el APK.
+                println("⚠️  key.properties no encontrado: el APK de release se firmará con la clave debug.")
+                signingConfig = signingConfigs.getByName("debug")
             }
             isMinifyEnabled = false
             isShrinkResources = false

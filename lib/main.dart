@@ -8,7 +8,6 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:timezone/data/latest.dart' as tz;
-import 'package:aptar/screens/Lista_tareas_screen.dart';
 import 'package:aptar/theme/app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -79,7 +78,7 @@ class MyApp extends StatelessWidget {
 
       theme: lightTheme(),
       darkTheme: darkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home:
           usuarioId == null
               ? const RegistroUsuarioScreen()

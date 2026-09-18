@@ -6,12 +6,24 @@ import 'package:aptar/DataBase/db_helper.dart';
 import 'package:aptar/models/tarea.dart';
 
 import 'package:aptar/screens/Horario_Screen.dart';
+import 'package:aptar/screens/agregar_proyecto_screen.dart';
 import 'package:aptar/screens/agregar_tarea_screen.dart';
 import 'package:aptar/screens/nuevo_semestre_screen.dart';
+import 'package:aptar/screens/proyecto_detalle_screen.dart';
 import 'package:aptar/screens/tareas_completadas_screen.dart';
 
 import 'package:aptar/notificaciones.dart';
+import 'package:aptar/models/proyecto_personal.dart';
+import 'package:aptar/widgets/proyecto_card.dart';
 import 'package:aptar/widgets/task_card.dart';
+import 'package:aptar/widgets/local_image.dart';
+import 'package:aptar/widgets/image_viewer.dart';
+import 'package:aptar/widgets/dashboard/custom_header.dart';
+import 'package:aptar/widgets/dashboard/dashboard_bottom_nav.dart';
+import 'package:aptar/widgets/dashboard/dashboard_fab.dart';
+import 'package:aptar/widgets/dashboard/empty_state.dart';
+import 'package:aptar/widgets/dashboard/section_header.dart';
+import 'package:aptar/theme/app_theme.dart';
 
 class ListaTareasScreen extends StatefulWidget {
   const ListaTareasScreen({Key? key}) : super(key: key);
@@ -23,10 +35,13 @@ class ListaTareasScreen extends StatefulWidget {
 class _ListaTareasScreenState extends State<ListaTareasScreen>
     with WidgetsBindingObserver {
   List<Tarea> _tareas = [];
+  List<ProyectoPersonal> _proyectos = [];
+  final Map<int, Map<String, int>> _progresoProyectos = {};
   bool _cargando = true;
   bool _haySemestreActivo = false;
   Map<String, dynamic>? _semestreActivo;
   String? _nombreUsuario;
+  int _navIndex = 0;
 
   String _saludoSegunHora() {
     final h = DateTime.now().hour;
@@ -42,6 +57,7 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
     super.initState();
     _verificarSemestre();
     _cargarNombreUsuario();
+    _cargarProyectos();
   }
 
   Future<void> _cargarNombreUsuario() async {
@@ -98,6 +114,29 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
     }
   }
 
+  Future<void> _cargarProyectos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final usuarioId = prefs.getInt('usuarioId');
+    if (usuarioId == null) return;
+
+    final proyectos = await DbHelper.getProyectos(usuarioId);
+    final progreso = <int, Map<String, int>>{};
+    for (final p in proyectos) {
+      if (p.id != null) {
+        progreso[p.id!] = await DbHelper.getProgresoProyecto(p.id!);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _proyectos = proyectos;
+        _progresoProyectos
+          ..clear()
+          ..addAll(progreso);
+      });
+    }
+  }
+
   Future<void> _cargarTareas() async {
     final tareas = await DbHelper.getTareas();
 
@@ -147,181 +186,241 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.navy),
+        ),
+      );
     }
 
-    final showFab = _haySemestreActivo;
+    final enTabEscolar = _navIndex == 0;
+    final showFab = enTabEscolar ? _haySemestreActivo : true;
+    final nombreCorto =
+        _nombreUsuario != null ? _firstName(_nombreUsuario!) : null;
 
     return Scaffold(
-      appBar: AppBar(
-        // quita el espacio reservado para el leading
-        automaticallyImplyLeading: false,
-        leadingWidth: 0,
-        leading: const SizedBox.shrink(),
-
-        centerTitle: false,
-        // ponlo bien pegado a la izquierda (ajusta 0–16 a tu gusto)
-        titleSpacing: 12,
-        toolbarHeight: 72,
-        elevation: 0,
-
-        title: Builder(
-          builder: (context) {
-            final cs = Theme.of(context).colorScheme;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _nombreUsuario == null
-                      ? '${_saludoSegunHora()} 👋'
-                      : '${_saludoSegunHora()}, ${_firstName(_nombreUsuario!)} 👋',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 20,
-                    color: cs.onSurface, // ✅ color fuerte (visible)
-                  ),
+      backgroundColor: AppColors.background,
+      extendBody: true,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            CustomHeader(
+              saludo: _saludoSegunHora(),
+              nombreUsuario: nombreCorto,
+              showMenu: enTabEscolar,
+              onMenuSelected: enTabEscolar ? _onMenuSelected : null,
+              menuItems: const [
+                PopupMenuItem(
+                  value: 'completadas',
+                  child: Text('Tareas completadas'),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat('EEE d MMM', 'es_MX').format(DateTime.now()),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: cs.onSurfaceVariant, // ✅ subtítulo más tenue
-                  ),
+                PopupMenuItem(
+                  value: 'horario',
+                  child: Text('Horario de clases'),
+                ),
+                PopupMenuItem(
+                  value: 'reset_semestre',
+                  child: Text('Cerrar semestre e iniciar uno nuevo'),
                 ),
               ],
-            );
-          },
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: enTabEscolar ? _buildTabEscolar() : _buildTabPersonal(),
+              ),
+            ),
+          ],
         ),
-
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'completadas') {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const TareasCompletadasScreen(),
-                  ),
-                );
-                await _cargarTareas();
-              } else if (value == 'horario') {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HorarioScreen()),
-                );
-              } else if (value == 'reset_semestre') {
-                await _confirmarYReiniciarSemestre();
-              }
-            },
-            itemBuilder:
-                (context) => const [
-                  PopupMenuItem(
-                    value: 'completadas',
-                    child: Text('Tareas completadas'),
-                  ),
-                  PopupMenuItem(
-                    value: 'horario',
-                    child: Text('Horario de clases'),
-                  ),
-                  PopupMenuItem(
-                    value: 'reset_semestre',
-                    child: Text('Cerrar semestre e iniciar uno nuevo'),
-                  ),
-                ],
-          ),
-        ],
       ),
-
       floatingActionButton:
           showFab
-              ? FloatingActionButton.extended(
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const AgregarTareaScreen(),
-                    ),
-                  );
-                  await _cargarTareas();
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Nueva tarea'),
+              ? DashboardFab(
+                tooltip: enTabEscolar ? 'Nueva tarea' : 'Nuevo proyecto',
+                onPressed: () => _onFabPressed(enTabEscolar),
               )
               : null,
-
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child:
-            _haySemestreActivo
-                ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildSemestreInfo(),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _cargarTareas,
-                        child:
-                            _tareas.isEmpty
-                                ? ListView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  children: const [
-                                    SizedBox(height: 48),
-                                    Icon(Icons.inbox_outlined, size: 56),
-                                    SizedBox(height: 12),
-                                    Center(
-                                      child: Text('No hay tareas registradas.'),
-                                    ),
-                                    SizedBox(height: 4),
-                                    Center(
-                                      child: Text(
-                                        'Toca “Nueva tarea” para agregar la primera.',
-                                      ),
-                                    ),
-                                  ],
-                                )
-                                : ListView.builder(
-                                  itemCount: _tareas.length,
-                                  itemBuilder: (context, index) {
-                                    final tarea = _tareas[index];
-                                    return TaskCard(
-                                      tarea: tarea,
-                                      onTap:
-                                          () => _mostrarDetallesTarea(
-                                            context,
-                                            tarea,
-                                          ),
-                                      onCheck: () => _marcarCompletada(tarea),
-                                      onLongPress:
-                                          () => _mostrarDetallesTarea(
-                                            context,
-                                            tarea,
-                                          ),
-                                    );
-                                  },
-                                ),
-                      ),
-                    ),
-                  ],
-                )
-                : Center(
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const NuevoSemestreScreen(),
-                        ),
-                      );
-                      if (result == true) await _verificarSemestre();
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Iniciar nuevo semestre'),
-                  ),
-                ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: DashboardBottomNav(
+        currentIndex: _navIndex,
+        onTap: (i) => setState(() => _navIndex = i),
       ),
+    );
+  }
+
+  Future<void> _onMenuSelected(String value) async {
+    if (value == 'completadas') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const TareasCompletadasScreen()),
+      );
+      await _cargarTareas();
+    } else if (value == 'horario') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const HorarioScreen()),
+      );
+    } else if (value == 'reset_semestre') {
+      await _confirmarYReiniciarSemestre();
+    }
+  }
+
+  Future<void> _onFabPressed(bool enTabEscolar) async {
+    if (enTabEscolar) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AgregarTareaScreen()),
+      );
+      await _cargarTareas();
+    } else {
+      final ok = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const AgregarProyectoScreen()),
+      );
+      if (ok == true) await _cargarProyectos();
+    }
+  }
+
+  Widget _buildTabEscolar() {
+    if (!_haySemestreActivo) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 80),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const EmptyState(
+                icon: Icons.school_outlined,
+                title: 'Sin semestre activo',
+                subtitle:
+                    'Inicia un nuevo semestre para registrar materias y tareas escolares.',
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NuevoSemestreScreen(),
+                    ),
+                  );
+                  if (result == true) await _verificarSemestre();
+                },
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Iniciar nuevo semestre'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSemestreInfo(),
+        const SectionHeader(
+          title: 'Tareas pendientes',
+          subtitle: 'Ordenadas por fecha de entrega',
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.navy,
+            onRefresh: _cargarTareas,
+            child:
+                _tareas.isEmpty
+                    ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 100),
+                      children: const [
+                        EmptyState(
+                          icon: Icons.inbox_outlined,
+                          title: 'No hay tareas registradas',
+                          subtitle:
+                              'Usa el botón central para agregar tu primera tarea.',
+                        ),
+                      ],
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 100),
+                      itemCount: _tareas.length,
+                      itemBuilder: (context, index) {
+                        final tarea = _tareas[index];
+                        return TaskCard(
+                          tarea: tarea,
+                          onTap: () => _mostrarDetallesTarea(context, tarea),
+                          onCheck: () => _marcarCompletada(tarea),
+                          onLongPress:
+                              () => _mostrarDetallesTarea(context, tarea),
+                        );
+                      },
+                    ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabPersonal() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader(
+          title: 'Proyectos personales',
+          subtitle: 'Tus metas y actividades fuera de lo escolar',
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.navy,
+            onRefresh: _cargarProyectos,
+            child:
+                _proyectos.isEmpty
+                    ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 100),
+                      children: const [
+                        EmptyState(
+                          icon: Icons.folder_open_outlined,
+                          title: 'No hay proyectos personales',
+                          subtitle:
+                              'Usa el botón central para crear tu primer proyecto.',
+                        ),
+                      ],
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 100),
+                      itemCount: _proyectos.length,
+                      itemBuilder: (context, index) {
+                        final proyecto = _proyectos[index];
+                        final progreso =
+                            proyecto.id != null
+                                ? _progresoProyectos[proyecto.id!]
+                                : null;
+                        return ProyectoCard(
+                          proyecto: proyecto,
+                          totalActividades: progreso?['total'] ?? 0,
+                          actividadesCompletadas:
+                              progreso?['completadas'] ?? 0,
+                          onTap: () async {
+                            await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (_) =>
+                                        ProyectoDetalleScreen(proyecto: proyecto),
+                              ),
+                            );
+                            await _cargarProyectos();
+                          },
+                        );
+                      },
+                    ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -358,6 +457,10 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
       'es_MX',
     ).format(fechaEntrega);
 
+    final maxDialogHeight = MediaQuery.of(context).size.height * 0.85;
+    final tieneImagen =
+        tarea.imagenRuta != null && tarea.imagenRuta!.isNotEmpty;
+
     showDialog(
       context: context,
       builder:
@@ -365,13 +468,15 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: IntrinsicHeight(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxDialogHeight),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Título
+                    // Título fijo
                     Row(
                       children: [
                         Icon(
@@ -392,51 +497,99 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
                     ),
                     const SizedBox(height: 12),
 
-                    // Descripción
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.description_outlined),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            tarea.descripcion,
-                            style: const TextStyle(fontSize: 16),
-                          ),
+                    // Contenido scrolleable
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (tieneImagen) ...[
+                              GestureDetector(
+                                onTap:
+                                    () => showImageViewer(
+                                      context,
+                                      tarea.imagenRuta!,
+                                    ),
+                                child: Stack(
+                                  alignment: Alignment.bottomRight,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: LocalImage(
+                                        path: tarea.imagenRuta,
+                                        height: 180,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    Container(
+                                      margin: const EdgeInsets.all(8),
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Icon(
+                                        Icons.zoom_in,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // Descripción
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.description_outlined),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    tarea.descripcion,
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Fecha
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today),
+                                const SizedBox(width: 8),
+                                Text(textoFecha),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Tiempo restante
+                            Row(
+                              children: [
+                                const Icon(Icons.hourglass_bottom_rounded),
+                                const SizedBox(width: 8),
+                                Text(
+                                  tiempoRestante,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    color: colorTiempo,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Fecha
-                    Row(
-                      children: [
-                        const Icon(Icons.calendar_today),
-                        const SizedBox(width: 8),
-                        Text(textoFecha),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Tiempo restante
-                    Row(
-                      children: [
-                        const Icon(Icons.hourglass_bottom_rounded),
-                        const SizedBox(width: 8),
-                        Text(
-                          tiempoRestante,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: colorTiempo,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
 
-                    // Botones
+                    // Botones fijos
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -463,7 +616,6 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
   }
 
   Widget _buildSemestreInfo() {
-    final cs = Theme.of(context).colorScheme;
     final inicioIso = _semestreActivo?['fechaInicio'] as String?;
     final finIso = _semestreActivo?['fechaFin'] as String?;
 
@@ -471,87 +623,100 @@ class _ListaTareasScreenState extends State<ListaTareasScreen>
       if (iso == null || iso.isEmpty) return '—';
       final d = DateTime.tryParse(iso);
       if (d == null) return iso;
-      return DateFormat('EEE d MMM yyyy', 'es_MX').format(d);
+      return DateFormat('d MMM yyyy', 'es_MX').format(d);
     }
 
-    return Card(
-      color: cs.primaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          // Abre en modo “agregar materias” (fechas bloqueadas / prellenadas)
-          final ok = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (_) => NuevoSemestreScreen(
-                    appendMode: true,
-                    fechaInicioPrefill: DateTime.tryParse(inicioIso ?? ''),
-                    fechaFinPrefill: DateTime.tryParse(finIso ?? ''),
-                  ),
-            ),
-          );
-
-          if (ok == true && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Materias agregadas al semestre')),
-            );
-            await _cargarTareas(); // refresca la lista por si afecta algo
-            setState(() {}); // refresca el card si cambia algo visual
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.school, color: cs.onPrimaryContainer),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Semestre activo',
-                            style: TextStyle(
-                              color: cs.onPrimaryContainer,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          Icons.add_circle_outline,
-                          size: 18,
-                          color: cs.onPrimaryContainer,
-                        ), // hint visual
-                      ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppColors.navy, AppColors.navyLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(AppDecorations.cardRadius),
+        boxShadow: AppDecorations.cardShadow,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppDecorations.cardRadius),
+          onTap: () async {
+            final ok = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (_) => NuevoSemestreScreen(
+                      appendMode: true,
+                      fechaInicioPrefill: DateTime.tryParse(inicioIso ?? ''),
+                      fechaFinPrefill: DateTime.tryParse(finIso ?? ''),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Inicio: ${fmt(inicioIso)}',
-                      style: TextStyle(color: cs.onPrimaryContainer),
-                    ),
-                    Text(
-                      'Fin: ${fmt(finIso)}',
-                      style: TextStyle(color: cs.onPrimaryContainer),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Toca para agregar más materias',
-                      style: TextStyle(
-                        color: cs.onPrimaryContainer.withOpacity(0.9),
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
               ),
-            ],
+            );
+
+            if (ok == true && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Materias agregadas al semestre')),
+              );
+              await _cargarTareas();
+              setState(() {});
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.school_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Semestre activo',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${fmt(inicioIso)} – ${fmt(finIso)}',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Toca para agregar materias',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.add_circle_outline_rounded,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ],
+            ),
           ),
         ),
       ),

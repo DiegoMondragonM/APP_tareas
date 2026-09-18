@@ -3,6 +3,7 @@ import 'package:aptar/DataBase/db_helper.dart';
 import 'package:aptar/models/tarea.dart';
 import 'package:intl/intl.dart';
 import 'package:aptar/notificaciones.dart';
+import 'package:aptar/widgets/imagen_selector_widget.dart';
 
 class AgregarTareaScreen extends StatefulWidget {
   const AgregarTareaScreen({Key? key}) : super(key: key);
@@ -20,6 +21,7 @@ class _AgregarTareaScreenState extends State<AgregarTareaScreen> {
   List<String> _materias = [];
   String? _materiaSeleccionada;
   DateTime? _fechaHoraEntrega;
+  String? _imagenRuta;
 
   bool _guardando = false;
 
@@ -93,6 +95,7 @@ class _AgregarTareaScreenState extends State<AgregarTareaScreen> {
       descripcion: _descripcion.trim(),
       materia: _materia.trim(),
       fechadeentrega: _fechaHoraEntrega,
+      imagenRuta: _imagenRuta,
     );
 
     setState(() => _guardando = true);
@@ -181,6 +184,16 @@ onSaved: (v) => _descripcion = v?.trim() ?? '',
                     ],
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 12),
+
+              ImagenSelectorWidget(
+                imagenRuta: _imagenRuta,
+                prefix: 'tarea',
+                height: 140,
+                etiqueta: 'Imagen de la tarea (opcional)',
+                onChanged: (ruta) => setState(() => _imagenRuta = ruta),
               ),
 
               const SizedBox(height: 12),

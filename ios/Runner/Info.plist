@@ -47,5 +47,9 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>La app necesita acceso a la cámara para agregar fotos a tareas y proyectos.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>La app necesita acceso a tus fotos para agregar imágenes a tareas y proyectos.</string>
 	</dict>
 </plist>

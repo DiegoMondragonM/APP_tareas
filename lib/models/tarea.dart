@@ -5,6 +5,7 @@ class Tarea {
   String materia;
   DateTime? fechadeentrega;
   bool completada;
+  String? imagenRuta;
 
   Tarea({
     this.id,
@@ -13,6 +14,7 @@ class Tarea {
     required this.materia,
     required this.fechadeentrega,
     this.completada = false,
+    this.imagenRuta,
   });
   Map<String, dynamic> toMap() {
     return {
@@ -22,6 +24,7 @@ class Tarea {
       'materia': materia,
       'fechadeentrega': fechadeentrega?.toIso8601String(),
       'completada': completada ? 1 : 0,
+      'imagenRuta': imagenRuta,
     };
   }
 
@@ -31,8 +34,9 @@ class Tarea {
       titulo: map['titulo'],
       descripcion: map['descripcion'],
       materia: map['materia'],
-      fechadeentrega: DateTime.tryParse(map['fechadeentrega']),
+      fechadeentrega: DateTime.tryParse(map['fechadeentrega'] ?? ''),
       completada: map['completada'] == 1,
+      imagenRuta: map['imagenRuta'] as String?,
     );
   }
 }
